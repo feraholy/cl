@@ -1,0 +1,668 @@
+
+Tunnel.bindInterface('muamba_inventario_v2',cl)
+Proxy.addInterface('muamba_inventario_v2',cl)
+srv = Tunnel.getInterface("muamba_inventario_v2")
+
+local baus = config.chest
+local cooldown = 0
+local state = {}
+local cache = {}
+
+RegisterNUICallback('close',function()
+    StopScreenEffect("MenuMGSelectionIn")
+    SetNuiFocus(false,false)
+    SendNUIMessage({
+        action = "hide",
+        type = nil
+    })
+
+    if state.type == 'chest' then
+        srv.remove_chest_use(cache.chest)
+        cache.chest = nil
+    elseif state.type == 'homes' then
+        TriggerServerEvent('removeUserHomes',cache.house) -- Libera o bau da casa para uso
+        cache.house = nil
+    elseif state.type == 'trunk' then
+        srv.remove_user_trunk(cache.trunk,cache.vehInfo.vnetid)
+        cache.trunk = nil
+    end
+end)
+
+Citizen.CreateThread(function()
+    while true do
+        local idle = 100
+        if not cache.chest then
+            check_distance_chest()
+        else
+            idle = 1
+            local distance = #(GetEntityCoords(PlayerPedId()) - baus[cache.chest].coordenada)
+            if distance <= 3 then
+                if baus[cache.chest].show then
+                    mBMarker(baus[cache.chest].coordenada, 0.3, 0.3,0.3, "imagensblips", "cofre22")
+                end
+                if distance <= 1.2 and IsControlJustPressed(0,38) then
+                    if srv.check_permi_bau(cache.chest) then
+                        if srv.check_use_chest(cache.chest) then
+                            state.type = 'chest'
+                            StartScreenEffect("MenuMGSelectionIn", 0, true)
+                            SetNuiFocus(true,true)
+                            SendNUIMessage({
+                                action = "show",
+                                type = "chest",
+                                ip = config.ip
+                            })
+                        end
+                    end
+                end
+            else
+                cache.chest = nil
+            end
+        end
+        Wait(idle)
+    end
+end)
+
+function check_distance_chest()
+    for k,v in pairs(baus) do
+        local distance = #(v.coordenada - GetEntityCoords(PlayerPedId()))
+        if distance < 3 then
+            cache.chest = k
+        end
+    end
+end
+
+RegisterCommand('+inv',function()
+    if not ConfigBruce then
+        if cooldown == 0 then
+            cooldown = 1
+            if GetEntityHealth(PlayerPedId()) > 101 and not vRP.isHandcuffed() and not IsPedBeingStunned(PlayerPedId()) and not IsPlayerFreeAiming(PlayerPedId()) then
+                StartScreenEffect("MenuMGSelectionIn", 0, true)
+                SetNuiFocus(true,true)
+                state.type = 'inv'
+                SendNUIMessage({
+                    action = "show",
+                    type = "inv",
+                    ip = config.ip
+                })
+            end
+        end
+    else
+        if cooldown == 0 then
+            cooldown = 1
+            if GetEntityHealth(PlayerPedId()) > 101 and not IsPedBeingStunned(PlayerPedId()) and not IsPlayerFreeAiming(PlayerPedId()) then
+                StartScreenEffect("MenuMGSelectionIn", 0, true)
+                SetNuiFocus(true,true)
+                state.type = 'inv'
+                SendNUIMessage({
+                    action = "show",
+                    type = "inv",
+                    ip = config.ip
+                })
+            end
+        end
+    end
+end)
+
+RegisterCommand('+trunk',function()
+    local ped = PlayerPedId() 
+    if cooldown == 0 then
+        cooldown = 2
+        if GetEntityHealth(ped) > 101 and not vRP.isHandcuffed() and not IsPedBeingStunned(ped) and not IsPlayerFreeAiming(ped) then
+            cache.vehInfo = {}
+            local vehicle,vnetid,placa,vname,lock,banned,trunk = VehList(7)
+            cache.vehInfo.vehicle = vehicle
+            cache.vehInfo.plate = placa
+            cache.vehInfo.vname = vname
+            cache.vehInfo.lock = lock
+            cache.vehInfo.vnetid = vnetid
+            print()
+            if cache.vehInfo.plate then
+                if srv.openTrunk(cache.vehInfo.plate) then
+                    if srv.check_user_trunk(cache.vehInfo.vnetid,cache.vehInfo.plate,cache.vehInfo.lock) then
+                        StartScreenEffect("MenuMGSelectionIn", 0, true)
+                        SetNuiFocus(true,true)
+                        state.type = 'trunk'
+                        cache.trunk = placa
+                        SendNUIMessage({
+                            action = "show",
+                            type = "trunk_chest",
+                            ip = config.ip
+                        })
+                    end
+                end
+            end
+        end
+    end
+end)
+
+cl.vehicleClientLock = function (vehid,lock)
+	if NetworkDoesNetworkIdExist(vehid) then
+		local v = NetToVeh(vehid)
+		if DoesEntityExist(v) and IsEntityAVehicle(v) then
+			if lock == 1 then
+				SetVehicleDoorsLocked(v,2)
+			else
+				SetVehicleDoorsLocked(v,1)
+			end
+			SetVehicleLights(v,2)
+			Wait(200)
+			SetVehicleLights(v,0)
+			Wait(200)
+			SetVehicleLights(v,2)
+			Wait(200)
+			SetVehicleLights(v,0)
+		end
+	end
+end
+
+cl.open_house_chest = function(houseName)
+    cache.house = houseName
+    state.type = 'homes'
+    StartScreenEffect("MenuMGSelectionIn", 0, true)
+    SetNuiFocus(true,true)
+    SendNUIMessage({
+        action = "show",
+        type = "homes",
+        ip = config.ip
+    })
+end
+
+cl.open_nui_revistar = function()
+    StartScreenEffect("MenuMGSelectionIn", 0, true)
+    SetNuiFocus(true,true)
+    SendNUIMessage({
+        action = "show",
+        type = "revistar",
+        ip = config.ip
+    })
+end
+
+RegisterCommand('+esc',function()
+    StopScreenEffect("MenuMGSelectionIn")
+    SetNuiFocus(false,false)
+    SendNUIMessage({
+        action = "hide",
+        type = nil
+    })
+end)
+
+-- Citizen.CreateThread(function()
+--     StopScreenEffect("MenuMGSelectionIn")
+--     SetNuiFocus(false,false)
+-- end)
+
+-----------------------------------------------------------------------------------------------------------------------------------
+-- Updates
+-----------------------------------------------------------------------------------------------------------------------------------
+RegisterNUICallback('updateInventory',function(data,cb)
+    local inv,currentWeigth,maxWeight = srv.getInventory()
+    if inv and currentWeigth and maxWeight then
+        cb({inventory = inv,current = parseInt(currentWeigth),max = maxWeight})
+    end
+end)
+
+RegisterNUICallback('updateWeapons',function(data,cb)
+    local weapons = srv.getPlayerWeapons()
+    if weapons then
+        cb({weapons = weapons})
+    end
+end)
+
+RegisterNUICallback('updateSecundario',function(data,cb)
+    if data.type == 'chest' then
+        local secundario,max,current = srv.getChest(cache.chest)
+        if secundario then
+            cb({secundario = secundario, max = max, current = current})
+        end
+
+    elseif data.type == 'trunk' then
+        local secundario,max,current = srv.getTrunkChest(cache.vehInfo)
+        if secundario then
+            cb({secundario = secundario, max = max, current = current})
+        end
+
+    elseif data.type == 'homes' then
+        local secundario,max,current = srv.getItensHomes(cache.house)
+        if secundario then
+            cb({secundario = secundario, max = max, current = current})
+        end
+    end
+end)
+-----------------------------------------------------------------------------------------------------------------------------------
+-- Eventos pagar guardar item
+-----------------------------------------------------------------------------------------------------------------------------------
+RegisterNUICallback('secondaryToInv',function(data,cb)
+    local index,name,amount,item,type = data.index,data.name,data.amount,data.key,data.type
+    print(index,name,amount,item,type)
+    if index and name and amount and item and type then
+        if type == 'chest' then
+            srv.take_item(cache.chest,item,tonumber(amount))
+        elseif type == 'trunk' then
+            srv.take_item_trunk(cache.vehInfo.plate,cache.vehInfo.vname,item,tonumber(amount))
+        elseif type == 'homes' then
+            srv.takeItemHome(item,tonumber(amount),cache.house)
+        end
+    end
+end)
+
+RegisterNUICallback('invToSecondary',function(data,cb)
+    local index,name,amount,item,type = data.index,data.name,data.amount,data.key,data.type
+    if index and name and amount and item and type then
+        if type == 'chest' then
+            srv.store_item(cache.chest,item,tonumber(amount))
+        elseif type == 'trunk' then
+            srv.store_item_trunk(cache.vehInfo.plate,cache.vehInfo.vname,item,tonumber(amount))
+        elseif type == 'homes' then
+            srv.storeHomeChest(item,tonumber(amount),cache.house)
+        end
+    end
+end)
+-----------------------------------------------------------------------------------------------------------------------------------
+-- Eventos pagar guardar item
+-----------------------------------------------------------------------------------------------------------------------------------
+RegisterNUICallback('send_item',function(data)
+    if cooldown == 0 then
+        cooldown = 1
+        local index,name,amount,key = data.index,data.name,data.amount,data.key
+        if state.type == 'chest' then
+            srv.remove_chest_use(cache.chest)
+            cache.chest = nil
+        end
+        if tonumber(amount) ~= nil and tonumber(amount) > 0 then
+            srv.sendItem(index,name,tonumber(amount),key)
+        end
+    end
+end)
+
+RegisterNUICallback('drop_item',function(data)
+    if cooldown == 0 then
+        cooldown = 2
+        local index,name,amount,key = data.index,data.name,data.amount,data.key
+        -- if state.type == 'chest' then
+        --     srv.remove_chest_use(cache.chest)
+        --     cache.chest = nil
+        -- end
+        if state.type == 'chest' then return end
+        if state.type == 'homes' then return end
+        if tonumber(amount) ~= nil and tonumber(amount) > 0 then
+            TriggerServerEvent('inventario:registerDrop',key,amount,vec3(GetEntityCoords(PlayerPedId() )))
+        end
+    end
+end)
+
+RegisterNUICallback('usar',function(data)
+    if cooldown == 0 then
+        cooldown = 1
+        local index,name,amount,key = data.index,data.name,data.amount,data.key
+        if state.type == 'chest' then
+            srv.remove_chest_use(cache.chest)
+            cache.chest = nil
+        end
+        if tonumber(amount) ~= nil and tonumber(amount) > 0 then
+            srv.useItem(index,name,amount,key)
+        end
+    end
+end)
+
+cl.open_trunk = function(vehid,trunk)
+    if NetworkDoesNetworkIdExist(vehid) then
+		local v = NetToVeh(vehid)
+		if DoesEntityExist(v) and IsEntityAVehicle(v) then
+			if trunk then
+				SetVehicleDoorShut(v,5,0)
+			else
+				SetVehicleDoorOpen(v,5,0,0)
+			end
+		end
+	end
+end
+
+function cl.closeNUI()
+    TriggerServerEvent('removeUserHomes',cache.house)
+    StopScreenEffect("MenuMGSelectionIn")
+    SetNuiFocus(false,false)
+    SendNUIMessage({
+        action = "hide",
+        type = nil
+    })
+end
+
+function cl.removeWeapon(name)
+    local ammo = GetAmmoInPedWeapon(PlayerPedId() ,name)
+    RemoveWeaponFromPed(PlayerPedId() ,name)
+    SetPedAmmo(PlayerPedId() ,name,0)
+    return ammo
+end
+
+cl.GetAmmoWeapon = function(weapon)
+    return GetAmmoInPedWeapon(PlayerPedId() ,weapon)
+end
+
+function cl.updateMochila()
+    SendNUIMessage({
+        action = "update",
+        ip = config.ip,
+        type = "inv"
+    })
+end
+
+cl.getArmor = function()
+    return GetPedArmour(PlayerPedId() )
+end
+
+cl.setArmour = function(value)
+    SetArmour(parseInt(value))
+end
+
+Citizen.CreateThread(function()
+    while true do
+        if cooldown > 0 then
+            cooldown = cooldown - 1
+        end
+        Wait(800)
+    end
+end)
+
+function mBMarker(vector, sizex, sizey, sizez, src, id)
+    if not HasStreamedTextureDictLoaded(src) then
+        RequestStreamedTextureDict(src, true)
+        while not HasStreamedTextureDictLoaded(src) do
+            Wait(1)
+        end
+    else
+        local x,y,z = table.unpack(vector)
+        DrawMarker(9, x, y, z, tonumber('0.0'), tonumber('0.0'), tonumber('0.0'), tonumber('90.0'), tonumber('90.0'), tonumber('0.0'), sizex, sizey, sizez, 255, 255, 255, 255,false, true, 2, false, src, id, false)
+    end
+end
+
+-- ##############################################################################################################################################################################
+-- ##### DROP ITEM ##############################################################################################################################################################
+-- ##############################################################################################################################################################################
+
+
+local dropCoord = {}
+
+function cl.syncTable(fix,value)
+    dropCoord[fix] = value
+end
+
+Citizen.CreateThread(function()
+    while true do
+        local idle = 1000
+        local pCoord = GetEntityCoords(PlayerPedId() )
+        for k,v in pairs(dropCoord) do
+            if v.coordenada ~= nil then
+                local distance = #(pCoord - v.coordenada)
+                if distance <= 5 then 
+                    idle = 1
+                    local x,y,z = table.unpack(v.coordenada)
+                    if v.item == "dinheiro" or v.item == "dinheirosujo" then
+                        DrawText3D(x,y,z-0.6, "~g~[E] ~r~"..v.nitem.."~w~ - $"..v.count)
+                    else
+                        DrawText3D(x,y,z-0.6, "~g~[E] ~r~"..v.nitem.."~w~ - "..v.count)
+                    end
+                    if distance <= 1.2 and IsControlJustPressed(0,38) then
+                        deleteDrop(v.netId)
+                        TriggerServerEvent('inventario:take:item:dropSystem',k,v.item,v.count)
+                    end
+                end
+            end
+        end
+        Wait(idle)
+    end
+end)
+
+function getProps(item)
+    local props = config.props
+    if props[item] then 
+         return props[item]
+    else 
+        return 'prop_paper_bag_small'
+    end
+end
+
+function cl.CreateDrop(item,coord,index,count)
+    if item == "dinheiro" or item == "dinheirosujo" and count > 10000 then
+        dropCoord[index].status = false
+        local x,y,z = table.unpack(coord)
+        Prop = GetHashKey("prop_money_bag_01")
+        RequestModel(Prop)
+        while not HasModelLoaded(Prop) do
+          Citizen.Wait(1)
+        end
+        local object = CreateObject(Prop, x, y, z, true, true, true)
+        PlaceObjectOnGroundProperly(object)
+        local network = NetworkGetNetworkIdFromEntity(object)
+        SetEntityCollision(object,false)
+        dropCoord[index].netId = network
+        TriggerServerEvent('inventario:sync:drop:System',index,dropCoord[index])
+
+    else
+        dropCoord[index].status = false
+        local x,y,z = table.unpack(coord)
+        Prop = GetHashKey(getProps(item))
+        RequestModel(Prop)
+        while not HasModelLoaded(Prop) do
+          Citizen.Wait(1)
+        end
+        local object = CreateObject(Prop, x, y, z, true, true, true)
+        PlaceObjectOnGroundProperly(object)
+        local network = NetworkGetNetworkIdFromEntity(object)
+        dropCoord[index].netId = network
+        TriggerServerEvent('inventario:sync:drop:System',index,dropCoord[index])
+    end
+end
+
+function DrawText3D(x,y,z, text)
+    local onScreen,_x,_y=World3dToScreen2d(x,y,z)
+    local px,py,pz=table.unpack(GetGameplayCamCoords())
+    
+    SetTextScale(0.35, 0.35)
+    SetTextFont(4)
+    SetTextProportional(1)
+    SetTextColour(255, 255, 255, 215)
+    SetTextEntry("STRING")
+    SetTextCentre(1)
+    AddTextComponentString(text)
+    DrawText(_x,_y)
+    local factor = (string.len(text)) / 370
+    DrawRect(_x,_y+0.0125, 0.015+ factor, 0.03, 41, 11, 41, 68)
+end
+
+function deleteDrop(index)
+    TriggerServerEvent("trydeleteobj",ObjToNet(index))
+    DeleteObject(NetToObj(index))
+end
+
+-- ##############################################################################################################################################################################
+-- ##### HOT BAR ##############################################################################################################################################################
+-- ##############################################################################################################################################################################
+local hotbar = {}
+
+
+cl.removeHotBar = function(slot)
+    hotbar[slot] = false
+end
+
+RegisterNUICallback('addHotBar',function(data,cb)
+    local index,name,amount,key,slot = data.index,data.name,data.amount,data.key,data.slot
+    if key and slot then
+        hotbar[tostring(slot)] = {key,index}
+        cb({hotbar = hotbar}) 
+    end
+end)
+
+RegisterNUICallback('getHotBar',function(data,cb)
+    cb({hotbar = hotbar})
+end)
+
+local hktime = 0
+local hk_keys = {
+    [157] = {
+        action = function()
+            if hotbar['0'] then
+                srv.useItemHotBar(hotbar['0'][1],1,nil)
+            end
+        end
+    },
+    [158] = {
+        action = function()
+            if hotbar['1'] then
+                srv.useItemHotBar(hotbar['1'][1],1,nil)
+            end
+        end
+    },
+    [160] = {
+        action = function()
+            if hotbar['2'] then
+                srv.useItemHotBar(hotbar['2'][1],1,nil)
+            end
+        end
+    },
+    [164] = {
+        action = function()
+            if hotbar['3'] then
+                srv.useItemHotBar(hotbar['3'][1],1,nil)
+            end
+        end
+    },
+    [165] = {
+        action = function()
+            if hotbar['4'] then
+                srv.useItemHotBar(hotbar['4'][1],1,nil)
+            end
+        end
+    },
+}
+
+local function hkControl()
+    if hktime <= 0 then
+        hktime = 3
+        Citizen.CreateThread(function()
+            while hktime > 0 do
+                Citizen.Wait(1000)
+                hktime = hktime - 1
+            end
+        end)
+        return true
+    end
+    return false
+end
+
+Citizen.CreateThread(function()
+    while true do
+        Citizen.Wait(0)
+        for k, v in pairs(hk_keys) do
+            DisableControlAction(0, k, true)
+            if IsDisabledControlPressed(0, k) then
+                if hkControl() then
+                    v.action()
+                end
+            end
+        end
+        EnableControlAction(0, 37, true)
+    end
+end)
+
+Citizen.CreateThread(function()
+    while true do
+        if not IsDisabledControlPressed(0, 37) then
+            HudWeaponWheelIgnoreSelection()
+        else
+          Citizen.Wait(500)
+        end
+        Citizen.Wait(0)
+    end
+end)
+
+-----------------------------------------------------------------------------------------------------------------------------------
+-- Sistema de armas
+-----------------------------------------------------------------------------------------------------------------------------------
+RegisterNUICallback('equipar',function(data)
+    local index,name,amount,key,type = data.index,data.name,data.amount,data.key,data.type
+    if key and type and amount then
+        if type == 'equipar' then
+            if CheckWeapon(key) then
+                srv.EquipWeapon(key)
+            else
+                TriggerEvent('Notify','negado','Você já possui está arma equipada!',5000)
+            end
+        elseif type == 'recarregar' then
+            srv.EquipAmmo(key,parseInt(amount))
+        end
+    end
+end)
+
+function cl.equipar_item(item,type,ammo)
+    if type == "gun" then
+        GiveWeapon(item)
+    else
+        GiveAmmo(item,parseInt(ammo))
+    end
+end
+
+RegisterNUICallback('garmas',function(data,cb)
+    if cooldown == 0 then
+        cooldown = 1
+        local key = data.key
+        srv.garmas(key)
+    end
+end)
+
+verifyAmmo = function(weapon)
+    local weapons = cl.getWeapons()
+    for k,v in pairs(weapons) do
+        if k == weapon then
+            return true
+        end
+    end
+end
+
+cl.verifyWeapon = function(weapon)
+    if config.weapons[weapon] then
+        local myWeapon = cl.getWeapons()
+        for k,v in pairs(myWeapon) do
+            if k == weapon then
+                return false
+            end
+        end
+        return true
+    end
+end
+
+cl.getWeapons = function()
+	local player = PlayerPedId() 
+	local ammo_types = {}
+	local weapons = {}
+	for k,v in pairs(config.weapons) do
+		local hash = GetHashKey(k)
+		if HasPedGotWeapon(player,hash) then
+			local atype = GetPedAmmoTypeFromWeapon(player,hash)
+			if ammo_types[atype] == nil then
+				ammo_types[atype] = true
+				weapons[k] = GetAmmoInPedWeapon(player,hash)
+			else
+				weapons[k] = 0
+			end
+		end
+	end
+
+    -- local colete = tonumber(GetPedArmour(PlayerPedId() ))
+    -- if colete > 0 then
+    --     weapons[config.core.itemColete] = colete
+    -- end
+	return weapons
+end
+
+split = function(str, sep)
+    if sep == nil then sep = "%s" end
+    local t={}
+    local i=1
+    for str in string.gmatch(str, "([^"..sep.."]+)") do
+        t[i] = str
+        i = i + 1
+    end
+    return t
+end
+
+
